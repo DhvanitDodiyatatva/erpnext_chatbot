@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+psycopg2-binary
+chromadb
+google-genai
+pydantic
+sqlalchemy
+sentence-transformers
