@@ -2,7 +2,6 @@ import os
 import chromadb
 from chromadb.config import Settings
 
-# Absolute project root
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
 

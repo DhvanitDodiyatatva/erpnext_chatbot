@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from app.services.realtime_ingest import ingest_incremental_data
 from sqlalchemy.orm import Session
 from app.models.chat_schema import ChatRequest, ChatResponse
 from app.api.deps import get_db
@@ -8,6 +10,9 @@ from app.services.llm import generate_answer
 
 router = APIRouter()
 
+class ChatRequest(BaseModel):
+    question: str
+
 @router.get("/customers")
 def get_customers(db: Session = Depends(get_db)):
     customers = db.query(Customer).all()
@@ -16,14 +21,11 @@ def get_customers(db: Session = Depends(get_db)):
         for c in customers
     ]
 
+@router.post("/chat")
+def chat(req: ChatRequest):
+    ingest_incremental_data()
 
-@router.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
-    context = search_context(request.question)
-
-    answer = generate_answer(
-        context=context,
-        question=request.question
-    )
+    context = search_context(req.question)
+    answer = generate_answer(context, req.question)
 
     return {"answer": answer}
