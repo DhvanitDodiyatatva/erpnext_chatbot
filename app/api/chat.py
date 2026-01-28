@@ -7,6 +7,9 @@ from app.api.deps import get_db
 from app.models.schemas import Customer
 from app.services.search import search_context
 from app.services.llm import generate_answer
+from app.services.sql_generator import generate_sql
+from app.services.sql_executor import execute_sql
+from app.services.answer_formatter import format_answer
 
 router = APIRouter()
 
@@ -21,11 +24,32 @@ def get_customers(db: Session = Depends(get_db)):
         for c in customers
     ]
 
+# @router.post("/chat")
+# def chat(req: ChatRequest):
+#     ingest_incremental_data()
+
+#     context = search_context(req.question)
+#     answer = generate_answer(context, req.question)
+
+#     return {"answer": answer}
 @router.post("/chat")
 def chat(req: ChatRequest):
-    ingest_incremental_data()
+    question = req.question
 
-    context = search_context(req.question)
-    answer = generate_answer(context, req.question)
+    try:
+        #  Step 1: Try SQL
+        sql = generate_sql(question)
+        data = execute_sql(sql)
+
+        if data:
+            answer = format_answer(question, data)
+            return {"answer": answer, "sql": sql}
+
+    except Exception:
+        pass  # fallback to RAG
+
+    #  Step 2: Fallback to RAG
+    context = search_context(question)
+    answer = generate_answer(context, question)
 
     return {"answer": answer}
