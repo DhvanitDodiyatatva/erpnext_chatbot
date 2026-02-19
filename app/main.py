@@ -1,10 +1,6 @@
 from fastapi import FastAPI
-from app.api.chat import router as chat_router
+from app.api.erp_chat import router as erp_router
 
-app = FastAPI(title="PostgreSQL AI Chatbot")
+app = FastAPI(title="ERPNext AI Backend")
 
-app.include_router(chat_router)
-
-@app.get("/")
-def health_check():
-    return {"status": "ok"}
+app.include_router(erp_router)

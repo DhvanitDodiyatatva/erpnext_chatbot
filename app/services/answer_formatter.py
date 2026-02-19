@@ -1,29 +1,20 @@
-from groq import Groq
-import os
+from app.services.llm import llm_call
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-def format_answer(question: str, data: list[dict]) -> str:
-    if not data:
-        return "No data found for this query."
+def format_answer(question: str, rows: list[dict]) -> str:
+    if not rows:
+        return "No data found."
 
     prompt = f"""
-User question:
+Question:
 {question}
 
-Database result:
-{data}
+Database Result:
+{rows}
 
-Explain the result clearly in natural language.
-"""  
-
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        temperature=0.3,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
-        ]
+Explain this clearly in business-friendly language.
+"""
+    return llm_call(
+        "You are a helpful ERP assistant.",
+        prompt,
+        temperature=0.3
     )
-
-    return response.choices[0].message.content

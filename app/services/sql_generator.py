@@ -1,34 +1,26 @@
-from groq import Groq
-import os
-from dotenv import load_dotenv
+from app.services.llm import llm_call
 
-load_dotenv()
+ERP_SCHEMA = """
+You are generating MariaDB SELECT queries for ERPNext.
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+IMPORTANT:
+- Return ONLY raw SQL
+- Do NOT use ```sql markdown
+- No explanations
+- No formatting
+- Output must start directly with SELECT
 
-SQL_SYSTEM_PROMPT = """
-You are an expert PostgreSQL assistant.
+Tables:
+tabCustomer(name, customer_name)
+tabSales Invoice(name, customer, posting_date, grand_total)
+tabSales Invoice Item(parent, item_code, qty, rate)
 
 Rules:
-- Generate ONLY a SELECT query
-- Do NOT use INSERT, UPDATE, DELETE, DROP, TRUNCATE
-- Use only the tables and columns provided
-- Do NOT add explanations, only SQL
-
-Schema:
-customers(id, name, email, created_at, updated_at)
-products(id, name, category, price, created_at, updated_at)
-customer_product(customer_id, product_id, created_at, updated_at)
+- ONLY SELECT queries
+- NO INSERT, UPDATE, DELETE, DROP
+- Use exact column names
+- No explanations, only SQL
 """
 
 def generate_sql(question: str) -> str:
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        temperature=0,
-        messages=[
-            {"role": "system", "content": SQL_SYSTEM_PROMPT},
-            {"role": "user", "content": question}
-        ]
-    )
-
-    return response.choices[0].message.content.strip()
+    return llm_call(ERP_SCHEMA, question)
