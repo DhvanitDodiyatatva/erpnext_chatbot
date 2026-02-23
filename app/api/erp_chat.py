@@ -2,6 +2,7 @@ from app.services.classify_intent import classify_intent
 from app.services.llm import llm_call
 from fastapi import APIRouter
 import requests 
+from app.core.config import ERPNEXT_API_KEY
 from app.services.sql_generator import generate_sql
 from app.services.sql_validator import validate_sql
 from app.services.answer_formatter import format_answer
@@ -48,14 +49,17 @@ def erp_chat(payload: dict):
         print("--------------------------------------------------------------")
         print("Generated SQL:", sql)
         print("--------------------------------------------------------------")
-
-        validate_sql(sql)
-
+    
+        sql_lower = sql.lower()    
+        forbidden = ["insert", "update", "delete", "drop", "alter"]
+        if any(word in sql_lower for word in forbidden):
+            return {"type": "chat", "question": question, "answer": "This operation is not allowed."}
+        
         print("--------------------------------------------------------------")
         print("Generated after validate SQL:", sql)
         print("--------------------------------------------------------------")
 
-        headers = {"Authorization": "token 3273cfe6dfbd2b7:c6dfe7d19969e92"}
+        headers = {"Authorization": ERPNEXT_API_KEY}
 
         response = requests.post(
             ERP_EXECUTOR_URL, json={"sql": sql}, headers=headers, timeout=30
