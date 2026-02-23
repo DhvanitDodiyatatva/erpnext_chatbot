@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-import requests
+import requests 
 from app.services.sql_generator import generate_sql
 from app.services.sql_validator import validate_sql
 from app.services.answer_formatter import format_answer
