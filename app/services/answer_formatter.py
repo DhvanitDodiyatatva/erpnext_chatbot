@@ -1,20 +1,33 @@
 from app.services.llm import llm_call
+import json
 
 def format_answer(question: str, rows: list[dict]) -> str:
     if not rows:
         return "No data found."
 
+    rows_json = json.dumps(rows, indent=2)
+
     prompt = f"""
-Question:
+You are an ERP assistant.
+
+User Question:
 {question}
 
-Database Result:
-{rows}
+Database Result (JSON):
+{rows_json}
 
-Explain this clearly in business-friendly language.
+Instructions:
+- List ALL items from the database result.
+- Consider the Database Result (JSON) as a final answeres to the user question.
+- Do NOT omit any item.
+- Do NOT add recommendations.
+- Present the answer clearly and directly.
+
+Generate the final answer.
 """
+
     return llm_call(
-        "You are a helpful ERP assistant.",
+        "You are a precise ERP data assistant.",
         prompt,
-        temperature=0.3
+        temperature=0
     )

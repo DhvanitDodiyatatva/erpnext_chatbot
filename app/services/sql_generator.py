@@ -20,6 +20,8 @@ JOIN Rules (STRICT):
 - If selecting product_name → MUST JOIN tabProduct ON tabConsumerProduct.product = tabProduct.name
 - If filtering by consumer_name → MUST JOIN tabConsumer ON tabConsumerProduct.consumer = tabConsumer.name
 
+- If user asks for customer/ consumer name then use consumer_name column from tabConsumer not name column.
+
 - NEVER select a column from a table where it does not exist.
 - If a column is not in a table definition above, DO NOT use it.
 
