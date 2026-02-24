@@ -1,7 +1,7 @@
 from app.services.classify_intent import classify_intent
 from app.services.llm import llm_call
 from fastapi import APIRouter
-import requests 
+import requests
 from app.core.config import ERPNEXT_API_KEY
 from app.services.sql_generator import generate_sql
 from app.services.sql_validator import validate_sql
@@ -49,12 +49,16 @@ def erp_chat(payload: dict):
         print("--------------------------------------------------------------")
         print("Generated SQL:", sql)
         print("--------------------------------------------------------------")
-    
-        sql_lower = sql.lower()    
+
+        sql_lower = sql.lower()
         forbidden = ["insert", "update", "delete", "drop", "alter"]
         if any(word in sql_lower for word in forbidden):
-            return {"type": "chat", "question": question, "answer": "This operation is not allowed."}
-        
+            return {
+                "type": "chat",
+                "question": question,
+                "answer": "This operation is not allowed.",
+            }
+
         print("--------------------------------------------------------------")
         print("Generated after validate SQL:", sql)
         print("--------------------------------------------------------------")
@@ -66,12 +70,20 @@ def erp_chat(payload: dict):
         )
 
         if response.status_code != 200:
-            return {"type": "error", "error": "ERP server error"}
+            return {
+                "type": "error",
+                "question": question,
+                "answer": "ERP query execution failed. The requested field may not exist in the schema.",
+            }
 
         try:
             erp_response = response.json()
         except ValueError:
-            return {"type": "error", "error": "Invalid ERP response"}
+            return {
+                "type": "error",
+                "question": question,
+                "answer": "Invalid response received from ERP system.",
+            }
 
         print("--------------------------------------------------------------")
         print("ERP RAW RESPONSE:", erp_response)
@@ -79,7 +91,11 @@ def erp_chat(payload: dict):
 
         #  Safe ERP handling
         if "exception" in erp_response:
-            return {"type": "error", "question": question, "error": "ERP query failed"}
+            return {
+                "type": "error",
+                "question": question,
+                "answer": "The requested column does not exist in the ERP schema.",
+            }
 
         rows = erp_response.get("message", [])
 
