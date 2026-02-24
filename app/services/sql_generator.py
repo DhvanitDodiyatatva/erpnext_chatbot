@@ -9,6 +9,7 @@ IMPORTANT:
 - No explanations
 - No formatting
 - Output must start directly with SELECT
+- Currency Unit of price, rate is rupees(₹) not dollars($)
 
 
 JOIN Rules (STRICT):
@@ -25,6 +26,14 @@ JOIN Rules (STRICT):
 - NEVER select a column from a table where it does not exist.
 - If a column is not in a table definition above, DO NOT use it.
 
+ANALYSIS RULES:
+
+- If the question asks about trends, patterns, increasing/decreasing over time:
+    - Aggregate using SUM(qty) or SUM(qty * rate)
+    - (default) => Group by DATE(creation)
+    - Order by creation date
+- Always calculate total_amount as SUM(qty * rate) when analyzing purchases
+
 Database: MariaDB
 
 Tables:
@@ -33,14 +42,18 @@ tabConsumer(
 name PRIMARY KEY,
 consumer_name,
 email,
-phone
+phone,
+creation,
+modified
 )
 
 tabProduct(
 name PRIMARY KEY,
 product_name,
 price,
-stock_qty
+stock_qty,
+creation,
+modified
 )
 
 tabConsumerProduct(
@@ -48,7 +61,9 @@ name PRIMARY KEY,
 consumer (links to tabConsumer.name),
 product (links to tabProduct.name),
 qty,
-rate
+rate,
+creation,
+modified
 )
 
 Relationships:
@@ -68,4 +83,4 @@ Rules:
 
 
 def generate_sql(question: str) -> str:
-    return llm_call(ERP_SCHEMA, question)
+    return llm_call(ERP_SCHEMA, question, temperature=0)
