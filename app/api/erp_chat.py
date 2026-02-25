@@ -4,17 +4,17 @@ from fastapi import APIRouter
 import requests
 from app.core.config import ERPNEXT_API_KEY
 from app.services.sql_generator import generate_sql
-from app.services.sql_validator import validate_sql
 from app.services.answer_formatter import format_answer
+from app.models.chat_models import ChatRequest, ChatResponse
 
 router = APIRouter()
 
 ERP_EXECUTOR_URL = "http://localhost:8000/api/method/chatbot.api.sql.execute_sql"
 
 
-@router.post("/erp-chat")
-def erp_chat(payload: dict):
-    question = payload["question"]
+@router.post("/erp-chat", response_model=ChatResponse)
+def erp_chat(payload: ChatRequest):
+    question = payload.question
 
     # 1️ Classify Intent First
     intent = classify_intent(question)
@@ -40,7 +40,11 @@ def erp_chat(payload: dict):
 
         answer = llm_call(restricted_prompt, question, temperature=0)
 
-        return {"type": "chat", "question": question, "answer": answer}
+        return ChatResponse(
+            type="chat",
+            question=question,
+            answer=answer,
+        )
 
     # 3️ Handle ERP Query
     if intent == "ERP_QUERY":
@@ -53,37 +57,38 @@ def erp_chat(payload: dict):
         sql_lower = sql.lower()
         forbidden = ["insert", "update", "delete", "drop", "alter"]
         if any(word in sql_lower for word in forbidden):
-            return {
-                "type": "chat",
-                "question": question,
-                "answer": "This operation is not allowed.",
-            }
+            return ChatResponse(
+                type="chat",
+                question=question,
+                answer="This operation is not allowed.",
+            )
 
         print("--------------------------------------------------------------")
         print("Generated after validate SQL:", sql)
         print("--------------------------------------------------------------")
 
-        headers = {"Authorization": ERPNEXT_API_KEY}
-
         response = requests.post(
-            ERP_EXECUTOR_URL, json={"sql": sql}, headers=headers, timeout=30
+            ERP_EXECUTOR_URL,
+            json={"sql": sql},
+            headers={"Authorization": ERPNEXT_API_KEY},
+            timeout=30,
         )
 
         if response.status_code != 200:
-            return {
-                "type": "error",
-                "question": question,
-                "answer": "ERP query execution failed. The requested field may not exist in the schema.",
-            }
+            return ChatResponse(
+                type="error",
+                question=question,
+                answer="ERP query execution failed. The requested field may not exist in the schema.",
+            )
 
         try:
             erp_response = response.json()
         except ValueError:
-            return {
-                "type": "error",
-                "question": question,
-                "answer": "Invalid response received from ERP system.",
-            }
+            return ChatResponse(
+                type="error",
+                question=question,
+                answer="Invalid response from ERP system.",
+            )
 
         print("--------------------------------------------------------------")
         print("ERP RAW RESPONSE:", erp_response)
@@ -91,17 +96,26 @@ def erp_chat(payload: dict):
 
         #  Safe ERP handling
         if "exception" in erp_response:
-            return {
-                "type": "error",
-                "question": question,
-                "answer": "The requested column does not exist in the ERP schema.",
-            }
+            return ChatResponse(
+                type="error",
+                question=question,
+                answer="The requested column does not exist.",
+            )
 
         rows = erp_response.get("message", [])
 
         answer = format_answer(question, rows)
 
-        return {"type": "erp", "question": question, "sql": sql, "answer": answer}
+        return ChatResponse(
+            type="erp",
+            question=question,
+            answer=answer,
+            sql=sql,
+        )
 
     # 4️ Fallback Safety
-    return {"type": "error", "question": question, "error": "Unable to classify query"}
+    return ChatResponse(
+        type="error",
+        question=question,
+        answer="Unable to classify query.",
+    )
