@@ -1,5 +1,6 @@
 from app.services.classify_intent import classify_intent
 from app.services.llm import llm_call
+from app.services.vector_store import get_documents_collection
 from fastapi import APIRouter
 import requests
 from app.core.config import ERPNEXT_API_KEY
@@ -16,37 +17,11 @@ ERP_EXECUTOR_URL = "http://localhost:8000/api/method/chatbot.api.sql.execute_sql
 def erp_chat(payload: ChatRequest):
     question = payload.question
 
-    # 1️ Classify Intent First
+    # 1️ Classify Intent (ERP_QUERY vs DOCUMENT_QUERY only)
     intent = classify_intent(question)
     print("Detected Intent:", intent)
 
-    # 2️ Handle General Chat (No ERP Call)
-    if intent == "GENERAL_CHAT":
-
-        restricted_prompt = """
-        You are an ERPNext assistant.
-
-        Strict Rules:
-        - You ONLY answer questions related to ERPNext system usage,
-        modules, business processes, consumers, products, sales, stock, etc.
-        - If the question is unrelated to ERPNext or business data,
-        politely refuse.
-        - Do NOT answer general knowledge questions.
-        - Do NOT answer political, historical, or unrelated questions.
-
-        If unrelated, respond with:
-        "I can only assist with ERPNext-related queries."
-        """
-
-        answer = llm_call(restricted_prompt, question, temperature=0)
-
-        return ChatResponse(
-            type="chat",
-            question=question,
-            answer=answer,
-        )
-
-    # 3️ Handle ERP Query
+    # 2️ Handle ERP Query (schema-backed only)
     if intent == "ERP_QUERY":
         sql = generate_sql(question)
 
@@ -113,9 +88,75 @@ def erp_chat(payload: ChatRequest):
             sql=sql,
         )
 
-    # 4️ Fallback Safety
+    # 3️ Handle Document / Vector DB Query (and non-contextual questions)
+    if intent == "DOCUMENT_QUERY":
+        collection = get_documents_collection()
+        results = collection.query(
+            query_texts=[question],
+            n_results=5,
+        )
+
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+
+        if not documents:
+            return ChatResponse(
+                type="documents",
+                question=question,
+                answer=(
+                    "I couldn't find any relevant context in the ingested documents. "
+                    "I can only answer from the ERP database (consumers, products, quantities, etc.) "
+                    "or from uploaded documents (e.g. invoices, policies)."
+                ),
+            )
+
+        context_blocks = []
+        for doc, meta in zip(documents, metadatas):
+            source = meta.get("source", "unknown")
+            page = meta.get("page")
+            location = f"{source}"
+            if page is not None:
+                location += f" (page {page})"
+            context_blocks.append(f"Source: {location}\nContent:\n{doc}")
+
+        context_text = "\n\n---\n\n".join(context_blocks)
+
+        system_prompt = (
+            "You are a helpful assistant that answers questions based only on the "
+            "provided document context. If the context is insufficient or the question "
+            "is unrelated to the documents, say you are not sure or that you can only "
+            "help with ERP data or document content. Do not guess."
+        )
+
+        user_prompt = f"""
+You are given context extracted from a set of PDF documents.
+
+Context:
+{context_text}
+
+User question:
+{question}
+
+Instructions:
+- Use only the information from the context above.
+- If the answer is not clearly supported by the context, say that you don't know.
+- Provide a clear, concise answer. Use bullet points if it improves readability.
+"""
+
+        answer = llm_call(system_prompt, user_prompt, temperature=0)
+
+        return ChatResponse(
+            type="documents",
+            question=question,
+            answer=answer,
+        )
+
+    # 4️ Fallback (treat as document path)
     return ChatResponse(
-        type="error",
+        type="documents",
         question=question,
-        answer="Unable to classify query.",
+        answer=(
+            "I can only answer from the ERP database or from uploaded documents. "
+            "Please ask about consumers, products, quantities, or content from your documents."
+        ),
     )
