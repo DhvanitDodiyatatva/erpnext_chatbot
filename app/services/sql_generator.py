@@ -6,10 +6,11 @@ You are generating MariaDB SELECT queries for ERPNext.
 IMPORTANT:
 - Return ONLY raw SQL
 - Do NOT use ```sql markdown
+- Use exact column names mentioned in the schema below
 - No explanations
 - No formatting
 - Output must start directly with SELECT
-- Currency Unit of price, rate is rupees(₹) not dollars($)
+- Currency Unit of price, rate is rupees(₹)
 
 
 JOIN Rules (STRICT):
@@ -77,7 +78,6 @@ Relationships:
 Rules:
 - ONLY SELECT queries
 - NO INSERT, UPDATE, DELETE, DROP
-- Use exact column names
 - No explanations, only SQL
 """
 

@@ -106,7 +106,8 @@ def erp_chat(payload: ChatRequest):
                 answer=(
                     "I couldn't find any relevant context in the ingested documents. "
                     "I can only answer from the ERP database (consumers, products, quantities, etc.) "
-                    "or from uploaded documents (e.g. invoices, policies)."
+                    "For product specification/ description/details use this (Product_Description.pdf) file"
+                    "or from uploaded documents (e.g. invoices, policies )."
                 ),
             )
 
