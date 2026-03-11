@@ -4,13 +4,28 @@ from app.services.vector_store import get_documents_collection
 from fastapi import APIRouter
 import requests
 from app.core.config import ERPNEXT_API_KEY
-from app.services.sql_generator import generate_sql
+from app.services.sql_generator import generate_sql, generate_sql_with_error_context
 from app.services.answer_formatter import format_answer
 from app.models.chat_models import ChatRequest, ChatResponse
 
 router = APIRouter()
 
 ERP_EXECUTOR_URL = "http://localhost:8000/api/method/chatbot.api.sql.execute_sql"
+
+MAX_SQL_RETRIES = 2
+
+
+def _extract_erp_error(response: requests.Response) -> str:
+    """Extract a readable error string from an ERPNext error response."""
+    try:
+        data = response.json()
+        # ERPNext wraps exceptions under the 'exception' key
+        exc = data.get("exception") or data.get("message") or ""
+        if exc:
+            return str(exc)
+    except ValueError:
+        pass
+    return response.text or f"HTTP {response.status_code}"
 
 
 @router.post("/erp-chat", response_model=ChatResponse)
@@ -29,63 +44,102 @@ def erp_chat(payload: ChatRequest):
         print("Generated SQL:", sql)
         print("--------------------------------------------------------------")
 
-        sql_lower = sql.lower()
         forbidden = ["insert", "update", "delete", "drop", "alter"]
-        if any(word in sql_lower for word in forbidden):
+
+        last_error: str | None = None
+
+        for attempt in range(MAX_SQL_RETRIES + 1):  # attempt 0, 1, 2
+
+            # ── Forbidden keyword check ──────────────────────────────────────
+            sql_lower = sql.lower()
+            if any(word in sql_lower for word in forbidden):
+                return ChatResponse(
+                    type="chat",
+                    question=question,
+                    answer="This operation is not allowed.",
+                )
+
+            print("--------------------------------------------------------------")
+            print(f"[Attempt {attempt}] Executing SQL:", sql)
+            print("--------------------------------------------------------------")
+
+            # ── Execute on ERPNext ───────────────────────────────────────────
+            try:
+                response = requests.post(
+                    ERP_EXECUTOR_URL,
+                    json={"sql": sql},
+                    headers={"Authorization": ERPNEXT_API_KEY},
+                    timeout=30,
+                )
+            except requests.exceptions.RequestException as e:
+                return ChatResponse(
+                    type="error",
+                    question=question,
+                    answer=f"Could not reach ERPNext: {str(e)}",
+                )
+
+            # ── HTTP-level error (4xx / 5xx) ─────────────────────────────────
+            if response.status_code != 200:
+                last_error = _extract_erp_error(response)
+                print(f"[Attempt {attempt}] ERPNext HTTP error: {last_error}")
+
+                if attempt < MAX_SQL_RETRIES:
+                    print(f"[Retry {attempt + 1}] Asking LLM to fix SQL...")
+                    sql = generate_sql_with_error_context(question, sql, last_error)
+                    print(f"[Retry {attempt + 1}] New SQL:", sql)
+                    print("--------------------------------------------------------------")
+                    continue
+                else:
+                    break  # exhausted retries
+
+            # ── Parse JSON ───────────────────────────────────────────────────
+            try:
+                erp_response = response.json()
+            except ValueError:
+                return ChatResponse(
+                    type="error",
+                    question=question,
+                    answer="Invalid response from ERP system.",
+                )
+
+            print("--------------------------------------------------------------")
+            print("ERP RAW RESPONSE:", erp_response)
+            print("--------------------------------------------------------------")
+
+            # ── MariaDB-level error inside the JSON ──────────────────────────
+            if "exception" in erp_response:
+                last_error = erp_response.get("exception", "Unknown DB error")
+                print(f"[Attempt {attempt}] MariaDB exception: {last_error}")
+
+                if attempt < MAX_SQL_RETRIES:
+                    print(f"[Retry {attempt + 1}] Asking LLM to fix SQL...")
+                    sql = generate_sql_with_error_context(question, sql, last_error)
+                    print(f"[Retry {attempt + 1}] New SQL:", sql)
+                    print("--------------------------------------------------------------")
+                    continue
+                else:
+                    break  # exhausted retries
+
+            # ── Success ──────────────────────────────────────────────────────
+            rows = erp_response.get("message", [])
+            answer = format_answer(question, rows)
+
             return ChatResponse(
-                type="chat",
+                type="erp",
                 question=question,
-                answer="This operation is not allowed.",
+                answer=answer,
+                sql=sql,
             )
 
-        print("--------------------------------------------------------------")
-        print("Generated after validate SQL:", sql)
-        print("--------------------------------------------------------------")
-
-        response = requests.post(
-            ERP_EXECUTOR_URL,
-            json={"sql": sql},
-            headers={"Authorization": ERPNEXT_API_KEY},
-            timeout=30,
-        )
-
-        if response.status_code != 200:
-            return ChatResponse(
-                type="error",
-                question=question,
-                answer="ERP query execution failed. The requested field may not exist in the schema.",
-            )
-
-        try:
-            erp_response = response.json()
-        except ValueError:
-            return ChatResponse(
-                type="error",
-                question=question,
-                answer="Invalid response from ERP system.",
-            )
-
-        print("--------------------------------------------------------------")
-        print("ERP RAW RESPONSE:", erp_response)
-        print("--------------------------------------------------------------")
-
-        #  Safe ERP handling
-        if "exception" in erp_response:
-            return ChatResponse(
-                type="error",
-                question=question,
-                answer="The requested column does not exist.",
-            )
-
-        rows = erp_response.get("message", [])
-
-        answer = format_answer(question, rows)
-
+        # All retries exhausted — return a helpful message
+        print(f"All {MAX_SQL_RETRIES} retries exhausted. Last error: {last_error}")
         return ChatResponse(
-            type="erp",
+            type="error",
             question=question,
-            answer=answer,
-            sql=sql,
+            answer=(
+                f"Sorry, I could not execute the query successfully after {MAX_SQL_RETRIES} attempts. "
+                f"Last error: {last_error}"
+            ),
         )
 
     # 3️ Handle Document / Vector DB Query (and non-contextual questions)

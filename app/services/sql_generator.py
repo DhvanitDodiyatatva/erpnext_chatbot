@@ -6,7 +6,6 @@ You are generating MariaDB SELECT queries for ERPNext.
 IMPORTANT:
 - Return ONLY raw SQL
 - Do NOT use ```sql markdown
-- Use exact column names mentioned in the schema below
 - No explanations
 - No formatting
 - Output must start directly with SELECT
@@ -29,7 +28,7 @@ JOIN Rules (STRICT):
 
 ANALYSIS RULES:
 
-- If the question asks about trends, patterns, increasing/decreasing over time:
+- If the question asks about purchasing behaviour,  trends, patterns, increasing/decreasing over time:
     - Aggregate using SUM(qty) or SUM(qty * rate)
     - (default) => Group by DATE(creation)
     - Order by creation date
@@ -77,6 +76,7 @@ Relationships:
 
 Rules:
 - ONLY SELECT queries
+- Use exact column names mentioned in the schema above
 - NO INSERT, UPDATE, DELETE, DROP
 - No explanations, only SQL
 """
@@ -84,3 +84,27 @@ Rules:
 
 def generate_sql(question: str) -> str:
     return llm_call(ERP_SCHEMA, question, temperature=0)
+
+
+def generate_sql_with_error_context(question: str, previous_sql: str, error_message: str) -> str:
+    """
+    Re-generates a SQL query after a MariaDB execution error.
+    Sends the original question, the failing SQL, and the exact error
+    back to the LLM so it can produce a corrected query.
+    """
+    user_prompt = f"""The following SQL query was generated for the question below, but it failed on MariaDB with an error.
+
+Question:
+{question}
+
+Failed SQL:
+{previous_sql}
+
+MariaDB Error:
+{error_message}
+
+Please generate a CORRECTED SQL query that avoids this error.
+- Return ONLY the raw SQL starting with SELECT.
+- Do NOT use ```sql markdown.
+- No explanations."""
+    return llm_call(ERP_SCHEMA, user_prompt, temperature=0)
